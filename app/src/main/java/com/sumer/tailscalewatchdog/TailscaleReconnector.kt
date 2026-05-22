@@ -5,25 +5,22 @@ import android.content.Intent
 import android.util.Log
 
 /**
- * Strategies in order:
- *   1. Broadcast intent to Tailscale's IPN receiver (works if Tailscale is alive).
- *   2. Launch Tailscale's main activity; combined with Always-on VPN this usually
- *      restarts the VPN service.
+ * Reconnect strategies, run together:
+ *   1. Broadcast to Tailscale's IPN receiver (no-op if it died).
+ *   2. Arm the accessibility service, then launch Tailscale's activity.
+ *      When the window appears, the a11y service taps Connect.
  *
- * Last-resort accessibility tap is added in a follow-up commit.
+ * If the user has not enabled the a11y service, step 2 still launches
+ * Tailscale; combined with Always-on VPN this often re-establishes the
+ * tunnel without a tap.
  */
 class TailscaleReconnector(private val context: Context) {
 
     fun reconnect() {
-        if (tryBroadcastIntent()) {
-            Log.i(TAG, "Reconnect broadcast sent")
-            return
-        }
-        if (tryLaunchActivity()) {
-            Log.i(TAG, "Launched Tailscale activity")
-            return
-        }
-        Log.e(TAG, "All reconnect strategies failed")
+        val broadcasted = tryBroadcastIntent()
+        val armed = TailscaleAccessibilityService.instance?.also { it.armReconnect() } != null
+        val launched = tryLaunchActivity()
+        Log.i(TAG, "reconnect: broadcast=$broadcasted a11y_armed=$armed launched=$launched")
     }
 
     private fun tryBroadcastIntent(): Boolean = try {

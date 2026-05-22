@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Tailscale Watchdog</string>
+    <string name="status_ready">Tailscale detected. Tap Start.</string>
+    <string name="status_running">Watchdog running</string>
+    <string name="status_stopped">Watchdog stopped</string>
+    <string name="status_no_tailscale">Tailscale (com.tailscale.ipn) is not installed.</string>
+    <string name="start">Start watchdog</string>
+    <string name="stop">Stop watchdog</string>
+</resources>

@@ -7,4 +7,5 @@
     <string name="status_no_tailscale">Tailscale (com.tailscale.ipn) is not installed.</string>
     <string name="start">Start watchdog</string>
     <string name="stop">Stop watchdog</string>
+    <string name="accessibility_description">Last-resort recovery: when the watchdog cannot restart Tailscale via intent, this service taps the Connect button. It only acts when armed by the watchdog and only on Tailscale\'s own window.</string>
 </resources>

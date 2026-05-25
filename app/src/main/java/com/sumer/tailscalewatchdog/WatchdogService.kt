@@ -93,38 +93,38 @@ class WatchdogService : Service() {
         val needsWake = !pm.isInteractive || km.isKeyguardLocked
 
         if (needsWake) {
-            wakeScreen(pm)
-            val intent = Intent(this, UnlockAndLaunchActivity::class.java).apply {
-                addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                        Intent.FLAG_ACTIVITY_NO_USER_ACTION
-                )
-            }
-            try {
-                startActivity(intent)
-            } catch (e: Exception) {
-                Log.w(TAG, "UnlockAndLaunchActivity start failed; falling back", e)
-                TailscaleReconnector(applicationContext).reconnect()
-            }
+            // Background activity launches from a dataSync FGS are blocked
+            // while the device is locked / screen off. A full-screen-intent
+            // notification is the system-sanctioned path: it wakes the
+            // screen and launches the activity on our behalf.
+            postWakeFullScreenIntent()
         } else {
             TailscaleReconnector(applicationContext).reconnect()
         }
     }
 
-    private fun wakeScreen(pm: PowerManager) {
-        @Suppress("DEPRECATION")
-        val wl = pm.newWakeLock(
-            PowerManager.FULL_WAKE_LOCK or
-                PowerManager.ACQUIRE_CAUSES_WAKEUP or
-                PowerManager.ON_AFTER_RELEASE,
-            "$TAG:wake"
-        )
-        try {
-            wl.acquire(WAKE_LOCK_MS)
-        } catch (e: Exception) {
-            Log.w(TAG, "wake lock failed", e)
+    private fun postWakeFullScreenIntent() {
+        val launch = Intent(this, UnlockAndLaunchActivity::class.java).apply {
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_NO_USER_ACTION
+            )
         }
+        val pi = PendingIntent.getActivity(
+            this, 1, launch,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val notif = Notification.Builder(this, WAKE_CHANNEL_ID)
+            .setContentTitle("Tailscale Watchdog")
+            .setContentText("Reconnecting…")
+            .setSmallIcon(android.R.drawable.ic_menu_info_details)
+            .setCategory(Notification.CATEGORY_CALL)
+            .setFullScreenIntent(pi, true)
+            .setAutoCancel(true)
+            .build()
+        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        nm.notify(WAKE_NOTIF_ID, notif)
     }
 
     private fun cancelPendingReconnect() {
@@ -134,11 +134,13 @@ class WatchdogService : Service() {
 
     private fun ensureChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val ch = NotificationChannel(
-                CHANNEL_ID, "Watchdog", NotificationManager.IMPORTANCE_LOW
+            val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, "Watchdog", NotificationManager.IMPORTANCE_LOW)
             )
-            (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
-                .createNotificationChannel(ch)
+            nm.createNotificationChannel(
+                NotificationChannel(WAKE_CHANNEL_ID, "Wake to reconnect", NotificationManager.IMPORTANCE_HIGH)
+            )
         }
     }
 
@@ -165,8 +167,9 @@ class WatchdogService : Service() {
     companion object {
         const val TAG = "WatchdogService"
         const val CHANNEL_ID = "watchdog"
+        const val WAKE_CHANNEL_ID = "watchdog_wake"
         const val NOTIF_ID = 1001
+        const val WAKE_NOTIF_ID = 1002
         const val RECONNECT_DELAY_MS = 15_000L
-        const val WAKE_LOCK_MS = 10_000L
     }
 }

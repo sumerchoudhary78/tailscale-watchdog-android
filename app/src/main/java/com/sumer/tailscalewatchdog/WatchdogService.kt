@@ -3,6 +3,7 @@ package com.sumer.tailscalewatchdog
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.KeyguardManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
@@ -15,6 +16,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.util.Log
 
 class WatchdogService : Service() {
@@ -79,10 +81,50 @@ class WatchdogService : Service() {
         val r = Runnable {
             if (isVpnActive()) return@Runnable
             Log.i(TAG, "Triggering Tailscale reconnect")
-            TailscaleReconnector(applicationContext).reconnect()
+            triggerReconnect()
         }
         pendingReconnect = r
         handler.postDelayed(r, RECONNECT_DELAY_MS)
+    }
+
+    private fun triggerReconnect() {
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        val km = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+        val needsWake = !pm.isInteractive || km.isKeyguardLocked
+
+        if (needsWake) {
+            wakeScreen(pm)
+            val intent = Intent(this, UnlockAndLaunchActivity::class.java).apply {
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_NO_USER_ACTION
+                )
+            }
+            try {
+                startActivity(intent)
+            } catch (e: Exception) {
+                Log.w(TAG, "UnlockAndLaunchActivity start failed; falling back", e)
+                TailscaleReconnector(applicationContext).reconnect()
+            }
+        } else {
+            TailscaleReconnector(applicationContext).reconnect()
+        }
+    }
+
+    private fun wakeScreen(pm: PowerManager) {
+        @Suppress("DEPRECATION")
+        val wl = pm.newWakeLock(
+            PowerManager.FULL_WAKE_LOCK or
+                PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                PowerManager.ON_AFTER_RELEASE,
+            "$TAG:wake"
+        )
+        try {
+            wl.acquire(WAKE_LOCK_MS)
+        } catch (e: Exception) {
+            Log.w(TAG, "wake lock failed", e)
+        }
     }
 
     private fun cancelPendingReconnect() {
@@ -125,5 +167,6 @@ class WatchdogService : Service() {
         const val CHANNEL_ID = "watchdog"
         const val NOTIF_ID = 1001
         const val RECONNECT_DELAY_MS = 15_000L
+        const val WAKE_LOCK_MS = 10_000L
     }
 }
